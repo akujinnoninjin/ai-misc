@@ -9,7 +9,7 @@ model_path = "/models/mistral-7b-instruct-0.2"
 def importModel(modelpath) -> dict:
     file_pattern = "model*.safetensors"
 
-    file_list = glob.glob(os.path.join(model_folder, file_pattern))
+    file_list = glob.glob(os.path.join(model_path, file_pattern))
     total_files = len(file_list)
     print(file_list)
 
