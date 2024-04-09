@@ -1,76 +1,116 @@
 #import torch
 from safetensors.torch import load_file, save_file, save_model
 import glob
-# import matplotlib.pyplot as plt
-# from matplotlib.ticker import MultipleLocator
 import os
 import json
-# import yaml
 
-model_folder = "../models/tinyllama-1.1b-chat-1.0"
-# model_folder = "../models/mistral-7b-instruct-0.2"
+# model_folder = "/projects/ai/models/tinyllama-1.1b-chat-1.0"
+# model_folder = "/projects/ai/models/mistral-7b-instruct-0.2"
+model_folder = "./ai/models/upstage_SOLAR-10.7B-v1.0"
+# model_folder = "."
+
+layers_io = 8 # layers_count//4
+sort_norm = "post_attention_layernorm" # input_layernorm
+sort_targets = ["self_attn", "mlp", "input_layernorm", "post_attention_layernorm"]
+# input_layernorm, post_attention_layernorm, mlp, self_attn
+
+DRY_RUN = True
+
+# Layer Object for the Numbered Layers
+class NumberedLayer:
+    def __init__(self, n :int, type :str, weights, subtype :str = None):
+        self.n = self.orign = n
+        self.layer_type = type
+        self.subtype = subtype if subtype != type else None
+        self.weights = weights
+        
+    def getkey(self) -> str:
+        full_type = self.layer_type
+        if self.subtype:
+            full_type += "." + self.subtype
+        key = ".".join(['model.layers', str(self.n), full_type, 'weight'])
+        return key
+
+# Get the model files
 file_pattern = "model*.safetensors"
-
 file_list = glob.glob(os.path.join(model_folder, file_pattern))
 total_files = len(file_list)
 print(file_list)
 
+# Load the model files
 model_dict = {}
 for file_path in file_list:
     model_dict.update(load_file(file_path))
-
+    
+# Get the config file, to extract the layer count
 with open(os.path.join(model_folder, 'config.json')) as f:
     config_file =  json.load(f)
     f.close()
+del f
 
-layers_base = int(config_file['num_hidden_layers'])
-layers_io = layers_base//4
-layers_mid = layers_base - layers_io * 2
-assert(layers_mid > layers_io) # Sanity check; otherwise renaming end layers could cause overwrites
+# Save the original key count for an assert sanity check near the end
+original_key_count = len(model_dict.keys())
 
-# Reverse sort the dict before iterating would guarantee avoiding the collisions
+layers_count = int(config_file['num_hidden_layers'])
+layers_mid = layers_count - layers_io * 2
+assert(layers_mid > layers_io) # Obsolete sanity check
 
-middle_layers = {}
-# walk through all the keys
+# Extract the numbered layers, generate sort order
+layers = []
+sort_helper = []
 for key in list(model_dict.keys()):
     # Numbered layers
     if key.startswith('model.layers'):
         n = int(key.split(".")[2])
+        # If this is the sorting tensor
+        if (key.split(".")[3] == sort_norm 
+                # And its in the middle / sort range
+                and n in range(layers_io, layers_io+layers_mid)):
+            # Then add the relevant info to the sorting helper
+            sort_helper.append((float(model_dict[key].mean()),n))
         
-        # Rename end layers
-        if n >= layers_base-layers_io:
-            new_n = n+(layers_mid)
-            new_key = key.replace(str(n), str(new_n))
-            model_dict[new_key] = model_dict.pop(key)
-            
-        # Put mid layers in new object
-        elif n >= layers_io:
-            middle_layers[key] = model_dict.pop(key)
+        # Then pop the key into a layer object and add it to the list
+        layers.append(NumberedLayer(n = n, 
+                                    type = key.split(".")[3], 
+                                    subtype = key.split(".")[-2], 
+                                    weights = model_dict.pop(key) ))
 
+# Sort the layer list by layer number, and the sort helper by the mean
+layers.sort(key=lambda x: x.n)
+sort_helper.sort()
 
-# print(middle_layers.keys())
+# Apply the requested sort
+for layer in layers:
+    if layer.orign in range(layers_io, layers_io+layers_mid):
+        if (layer.layer_type in sort_targets):
+            layer.n = [y[1] for y in sort_helper].index(layer.n) + layers_io
+            print(f"{layer.n} + {layer.orign} + {layer.layer_type}")
+del sort_helper
 
-layernorm_options = ["input_layernorm", "post_attention_layernorm"]
+# Sort layers again for debugging only
+if DRY_RUN:
+    layers.sort(key=lambda x: x.n)
 
-sort_by_input = False
+# Add the layers back to the model dictionary
+for layer in layers:
+    model_dict.update( {layer.getkey() : layer.weights } )
+    if DRY_RUN:
+        print(f"{layer.n} <- {layer.orign} {layer.layer_type}.{layer.subtype}")
+del layers
+del layer
 
-if not sort_by_input:
-    layernorm_options.reverse()
+# Confirm the new dict is the same size as the old dict
+new_key_count = len(model_dict.keys())
+assert(original_key_count == new_key_count)
 
-# create a list of the original layer numbers + sorting norms 
-middle_sorting = []
-for key in middle_layers.keys():
-    if key.split(".")[3] == layernorm_options[0]:
-        n = int(key.split(".")[2])
-        mean = float(middle_layers[key].mean())
-        middle_sorting.append([mean, n])
+# Save the output, or print the debug
+if DRY_RUN:
+    print(f"{original_key_count} == {new_key_count}?")
+else:
+    save_file(model_dict, "model.safetensors")
 
-# print(middle_sorting)
-middle_sorting.sort()
-# print(middle_sorting)
-
-# input_layernorm <- sort by me
-# post_attention_layernorm 
+# input_layernorm
+# post_attention_layernorm  <- sort by me
 # mlp.down_proj
 # mlp.up_proj
 # mlp.gate_proj
@@ -78,25 +118,3 @@ middle_sorting.sort()
 # self_attn.q_proj
 # self_attn.v_proj
 # self_attn.o_proj
-
-
-# for key in model_dict.keys():
-#     # if it's a layer key, with an expected name format
-#     # ie. model.layers.[layernumber].[layertype](.layersubtype).weights
-#     if key.startswith('model.layers') and len(key.split(".")) in range (5,7):
-#         layer_number = int(key.split(".")[2])
-#         layer_type = key.split(".")[3]
-#         layer_subtype = key.split(".")[-2]
-
-#         if layer_type != layer_subtype:
-#             layer_type += ('.' + layer_subtype)
-
-#         if layer_number in layers:
-#             layers[layer_number].append(layer_type)
-#         else:
-#             layers[layer_number] = [layer_type]
-#     else:
-#         print(key)
-
-
-# save_file(model_dict, "newmodel.safetensors")
