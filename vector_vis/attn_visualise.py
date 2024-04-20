@@ -1,29 +1,38 @@
-import torch
-from safetensors.torch import load_file
-import glob
+from glob import glob
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
-import os
+from os import path, getcwd, chdir
+from sys import argv
+
+if len(argv) > 1:
+  chdir(argv[1])
 
 file_pattern = "model-*-of-*.*"
-
-file_list = glob.glob(file_pattern)
+file_list = glob(path.join(getcwd(), file_pattern))
 total_files = len(file_list)
 
 if(total_files) == 0:
   file_pattern = "model.*"
-  file_list = glob.glob(file_pattern)
+  file_list = glob(file_pattern)
   total_files = len(file_list)
-  assert(total_files>0)
+  
+if(total_files) == 0:
+  raise FileNotFoundError(f"No model files found in {getcwd()}")
 
 model_dict = {}
 
+# Torch imports delayed to ensure it aborts quickly if file not found
+from safetensors.torch import load_file
+import torch
+
 for file_path in file_list:
-  if file_path.split(".")[-1] == ".safetensors":
-      model_dict.update(load_file(file_path))
-  elif file_path.split(".")[-1] == ".pytorch":
+  if file_path.split(".")[-1] == "safetensors":
+    model_dict.update(load_file(file_path))
+  elif file_path.split(".")[-1] == "pytorch":
     model_dict.update(torch.load(file_path))
-  assert(len(model_dict)>0)
+  else:
+    raise IOError(f"{file_path} does not appear to be a valid file")
+assert(len(model_dict)>0)
 
 # print(model_dict.keys())
 
@@ -48,7 +57,7 @@ for i in range(0,max_layer_number+1):
   post_weights.append(torch.mean(model_dict['model.layers.' + str(i) + '.post_attention_layernorm.weight']).item())
   input_weights.append(torch.mean(model_dict['model.layers.' + str(i) + '.input_layernorm.weight']).item())
 #  deltas.append(input_weights[i]-post_weights[i])
-  
+del model_dict
 # print(post_weights)
 # print(input_weights)
 
@@ -62,7 +71,7 @@ ax.plot(range(len(post_weights)), post_weights, label='PostAtnNorm', linewidth=2
 
 # Set labels and title
 ax.set_xlabel('Layer')
-ax.set_title(os.path.basename(os.getcwd()))
+ax.set_title(path.basename(getcwd()))
 
 # Add vertical grid lines every 1 unit
 ax.grid(True, which='major', axis='x', linestyle='--', color='gray', linewidth=0.2)
@@ -88,7 +97,7 @@ ax.legend()
 ax.autoscale(axis='y')
 
 # Save the plot to an image file
-plt.savefig(os.path.basename(os.getcwd())+'.png')
+plt.savefig(path.basename(getcwd())+'.png')
 
 # Close the plot to avoid displaying it in GUI
 plt.close()
