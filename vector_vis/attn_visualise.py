@@ -116,6 +116,7 @@ def get_layernorms(model_dict) -> list[dict,dict]:
     norms = [{}, {}] # Input, PostAttn
     
     def add_norm_to_dict(i: int, key: str, split: int, val) -> None:
+        # Splits out the new key, and adds to the appropriate sub-dict
         newkey = int(key.split(".")[split-1])
         logger.debug(f'Adding {key.split(".")[split]} - {newkey}')
         norms[i].update({newkey: val})
@@ -123,12 +124,14 @@ def get_layernorms(model_dict) -> list[dict,dict]:
     for key,val in model_dict.items():  
         try: 
             # Is it pytorch/safetensors style?
-            i = ["input_layernorm", "post_attention_layernorm"].index(key.split(".")[3])
+            i = ["input_layernorm", "post_attention_layernorm"]
+            i = i.index(key.split(".")[3])
             add_norm_to_dict(i, key, 3, val)
         except (ValueError, IndexError):
             try: 
                 # Is it gguf style?
-                i = ["ffn_norm", "attn_norm"].index(key.split(".")[2])
+                i = ["ffn_norm", "attn_norm"]
+                i = i.index(key.split(".")[2])
                 add_norm_to_dict(i, key, 2, val)
             except (ValueError, IndexError):
                 # Ignore it
@@ -154,16 +157,20 @@ def make_pretty_graph(norms: list[dict,dict], titlefile: Path) -> None:
     _, ax = plt.subplots()
 
     # Plotting the two series
-    ax.plot(range(len(input_weights)), input_weights, label='InputNorm', linewidth=2)
-    ax.plot(range(len(post_weights)), post_weights, label='PostAtnNorm', linewidth=2)
+    ax.plot(range(len(input_weights)), input_weights,
+            label='InputNorm', linewidth=2)
+    ax.plot(range(len(post_weights)), post_weights,
+            label='PostAtnNorm', linewidth=2)
 
     # Set labels and title
     ax.set_xlabel('Layer')
     ax.set_title(title)
 
     # Add vertical grid lines every 1 unit
-    ax.grid(True, which='major', axis='x', linestyle='--', color='gray', linewidth=0.2)
-    plt.grid(True, which='minor', axis='x', linestyle=':', color='gray', linewidth=0.2)
+    ax.grid(True, which='major', axis='x', linestyle='--',
+            color='gray', linewidth=0.2)
+    plt.grid(True, which='minor', axis='x', linestyle=':',
+             color='gray', linewidth=0.2)
 
     plt.gca().xaxis.set_major_locator(MultipleLocator(4))
     plt.gca().xaxis.set_minor_locator(MultipleLocator(1))
@@ -176,9 +183,9 @@ def make_pretty_graph(norms: list[dict,dict], titlefile: Path) -> None:
     plt.axhline(y=0, color="grey", linestyle="--", linewidth=1)
 
     # Add vertical marker lines at certain points
-    #marker_points = [4, 11, 30, 37]  # Define the points where you want to add markers
+    #marker_points = [4, 11, 30, 37]
     #for point in marker_points:
-    #    plt.axvline(x=point, color='red', linestyle='--', linewidth=2)  # Adjust color, linestyle, and linewidth as needed
+    #    plt.axvline(x=point, color='red', linestyle='--', linewidth=2)
     
     # Show legend
     ax.legend()
