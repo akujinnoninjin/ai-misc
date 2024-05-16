@@ -73,6 +73,7 @@ def attn_vis(file_path: Path) -> None:
         logger.info(f"Loading Model {i+1}/{len(models)} ({id}) ...")
         
         # Attempt to load, with cleanup 
+        # TODO: Remove obvious redundancy here
         try:
             with ModelDict(model) as model_dict:
                 if f.suffix.lower() in many_per_folder:
