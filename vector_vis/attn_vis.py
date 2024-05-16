@@ -166,12 +166,13 @@ class ModelDict():
                 logger.debug(f"GGUF import based on {file_list[0]}")
                 from gguf.gguf_reader import GGUFReader
                 from torch import from_numpy
+                from numpy import array
                 def load_file(file: str) -> dict:
                     gguf = GGUFReader(file, "r")
                     gguf_dict = {}
                     for tensor in gguf.tensors:
                         gguf_dict.update(
-                            {tensor.name: from_numpy(tensor.data)})
+                            {tensor.name: from_numpy(array(tensor.data))})
                     return gguf_dict
             case _:
                 e = f"Unsupported file: {file_list[0]}"
