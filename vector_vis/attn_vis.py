@@ -27,8 +27,6 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
 # Also requires torch, gguf, safetensors
 
-from icecream import ic
-
 logger = logging.getLogger('attn_vis')
 logging.basicConfig(stream=stdout, level=logging.INFO)
 
